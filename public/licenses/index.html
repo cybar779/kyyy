@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Manajer Lisensi — KyyyMods</title>
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <div class="app-shell" id="shell"></div>
+
+  <div class="modal-backdrop" id="createModalBackdrop">
+    <div class="modal">
+      <h2 class="modal-title">Buat Lisensi Baru</h2>
+      <div class="error-msg" id="createError"></div>
+      <form id="createForm">
+        <div class="field">
+          <label for="product">Nama Produk / Prefix</label>
+          <input type="text" id="prefix" placeholder="cth: DIMZ" required maxlength="12">
+        </div>
+        <div class="field">
+          <label for="productName">Deskripsi Produk</label>
+          <input type="text" id="productName" placeholder="cth: DIMZ MODZ" required maxlength="64">
+        </div>
+        <div class="field">
+          <label for="maxDevices">Max Device</label>
+          <input type="number" id="maxDevices" min="1" value="1" required>
+        </div>
+        <div class="field">
+          <label for="expiresAt">Tanggal Expired</label>
+          <input type="date" id="expiresAt" required>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" id="cancelCreate">Batal</button>
+          <button type="submit" class="btn-primary" id="createSubmit">Buat Lisensi</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/shared.js"></script>
+  <script>
+    let currentUser = null;
+    let allLicenses = [];
+    let activeFilter = 'SEMUA';
+
+    (async () => {
+      currentUser = await requireSession();
+      if (!currentUser) return;
+
+      document.getElementById('shell').innerHTML = `
+        ${renderSidebar()}
+        <main class="main">
+          <div class="page-header">
+            <h1 class="page-title">Lisensi</h1>
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div class="credit-pill" id="creditPill">Memuat...</div>
+              <button class="btn-primary" id="openCreate">+ Buat Lisensi</button>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title">Semua Lisensi</div>
+              <div class="tabs" id="filterTabs"></div>
+            </div>
+            <div id="licenseTable"></div>
+          </div>
+        </main>
+      `;
+      initSidebar(currentUser.role);
+      document.getElementById('creditPill').textContent =
+        currentUser.role === 'admin' ? 'Admin' : `${currentUser.credits ?? 0} Credit`;
+
+      document.getElementById('openCreate').addEventListener('click', () => {
+        document.getElementById('createModalBackdrop').classList.add('show');
+      });
+      document.getElementById('cancelCreate').addEventListener('click', closeModal);
+      document.getElementById('createForm').addEventListener('submit', handleCreate);
+
+      await loadLicenses();
+    })();
+
+    function closeModal() {
+      document.getElementById('createModalBackdrop').classList.remove('show');
+      document.getElementById('createError').classList.remove('show');
+      document.getElementById('createForm').reset();
+    }
+
+    async function loadLicenses() {
+      try {
+        const { licenses } = await apiFetch('/api/licenses/list');
+        allLicenses = licenses;
+        renderFilterTabs();
+        renderTable();
+      } catch (err) {
+        document.getElementById('licenseTable').innerHTML = `<div class="empty-state">${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function renderFilterTabs() {
+      const products = ['SEMUA', ...new Set(allLicenses.map(l => l.product))];
+      document.getElementById('filterTabs').innerHTML = products.map(p =>
+        `<button class="tab ${p === activeFilter ? 'active' : ''}" data-filter="${escapeHtml(p)}">${escapeHtml(p)}</button>`
+      ).join('');
+      document.querySelectorAll('[data-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          activeFilter = btn.dataset.filter;
+          renderFilterTabs();
+          renderTable();
+        });
+      });
+    }
+
+    function renderTable() {
+      const now = new Date();
+      const filtered = activeFilter === 'SEMUA' ? allLicenses : allLicenses.filter(l => l.product === activeFilter);
+      const container = document.getElementById('licenseTable');
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="empty-state"><strong>Belum ada lisensi</strong>Klik "Buat Lisensi" untuk membuat key baru.</div>`;
+        return;
+      }
+
+      container.innerHTML = `
+        <table>
+          <thead>
+            <tr><th>Pengguna / Kunci</th><th>Berakhir</th><th>Status</th><th>Perangkat</th><th>Peran</th><th>Tindakan</th></tr>
+          </thead>
+          <tbody>
+            ${filtered.map(l => {
+              const expired = new Date(l.expiresAt) <= now;
+              return `
+                <tr>
+                  <td class="mono">${escapeHtml(l.key)}</td>
+                  <td>${formatDate(l.expiresAt)}</td>
+                  <td><span class="badge ${expired ? 'badge-red' : 'badge-green'}">${expired ? 'Expired' : 'Aktif'}</span></td>
+                  <td>${l.usedDevices ?? 0}/${l.maxDevices}</td>
+                  <td><span class="badge badge-violet">${escapeHtml(l.product)}</span></td>
+                  <td class="row-actions">
+                    <button class="btn-icon" title="Reset Device" data-reset="${escapeHtml(l.key)}">↻</button>
+                    <button class="btn-danger" data-delete="${escapeHtml(l.key)}">Hapus</button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+
+      document.querySelectorAll('[data-reset]').forEach(btn => {
+        btn.addEventListener('click', () => handleReset(btn.dataset.reset));
+      });
+      document.querySelectorAll('[data-delete]').forEach(btn => {
+        btn.addEventListener('click', () => handleDelete(btn.dataset.delete));
+      });
+    }
+
+    async function handleCreate(e) {
+      e.preventDefault();
+      const errorEl = document.getElementById('createError');
+      const submitBtn = document.getElementById('createSubmit');
+      errorEl.classList.remove('show');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Membuat...';
+
+      try {
+        await apiFetch('/api/licenses/create', {
+          method: 'POST',
+          body: JSON.stringify({
+            prefix: document.getElementById('prefix').value.trim(),
+            product: document.getElementById('productName').value.trim(),
+            maxDevices: document.getElementById('maxDevices').value,
+            expiresAt: document.getElementById('expiresAt').value
+          })
+        });
+        closeModal();
+        await loadLicenses();
+        if (currentUser.role !== 'admin') {
+          const { user } = await apiFetch('/api/auth/me');
+          currentUser = user;
+          document.getElementById('creditPill').textContent = `${user.credits ?? 0} Credit`;
+        }
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.add('show');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Buat Lisensi';
+      }
+    }
+
+    async function handleReset(key) {
+      if (!confirm(`Reset semua perangkat untuk key ${key}?`)) return;
+      try {
+        await apiFetch('/api/licenses/reset-device', { method: 'POST', body: JSON.stringify({ key }) });
+        await loadLicenses();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function handleDelete(key) {
+      if (!confirm(`Hapus key ${key}? Tindakan ini tidak bisa dibatalkan.`)) return;
+      try {
+        await apiFetch('/api/licenses/delete', { method: 'POST', body: JSON.stringify({ key }) });
+        await loadLicenses();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+  </script>
+</body>
+</html>
