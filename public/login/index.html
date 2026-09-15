@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Masuk — KyyyMods</title>
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <h1 class="login-title">🔑 KyyyMods</h1>
+      <p class="login-sub">Admin Dashboard — masuk untuk melanjutkan</p>
+
+      <div class="error-msg" id="errorMsg"></div>
+
+      <form id="loginForm">
+        <div class="field">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" autocomplete="username" required maxlength="32">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" autocomplete="current-password" required minlength="8">
+        </div>
+        <button type="submit" class="btn-primary" id="submitBtn" style="width:100%;">Masuk</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('loginForm');
+    const errorMsg = document.getElementById('errorMsg');
+    const submitBtn = document.getElementById('submitBtn');
+
+    // If already logged in, skip straight to dashboard.
+    fetch('/api/auth/me', { credentials: 'same-origin' })
+      .then(r => r.ok ? window.location.href = '/dashboard' : null)
+      .catch(() => {});
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorMsg.classList.remove('show');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Memproses...';
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            username: document.getElementById('username').value.trim(),
+            password: document.getElementById('password').value
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Login gagal.');
+        window.location.href = '/dashboard';
+      } catch (err) {
+        errorMsg.textContent = err.message;
+        errorMsg.classList.add('show');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Masuk';
+      }
+    });
+  </script>
+</body>
+</html>
