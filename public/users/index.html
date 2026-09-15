@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Manajemen User — KyyyMods</title>
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <div class="app-shell" id="shell"></div>
+
+  <div class="modal-backdrop" id="createModalBackdrop">
+    <div class="modal">
+      <h2 class="modal-title">Tambah User</h2>
+      <div class="error-msg" id="createError"></div>
+      <form id="createForm">
+        <div class="field">
+          <label for="newUsername">Username</label>
+          <input type="text" id="newUsername" required maxlength="32" pattern="[a-zA-Z0-9_-]+">
+        </div>
+        <div class="field">
+          <label for="newPassword">Password</label>
+          <input type="password" id="newPassword" required minlength="8">
+        </div>
+        <div class="field">
+          <label for="newRole">Peran</label>
+          <select id="newRole" style="width:100%; background:var(--bg); border:1px solid var(--border); border-radius:10px; color:var(--text); padding:11px 14px;">
+            <option value="user">User Biasa</option>
+            <option value="admin">Administrator</option>
+          </select>
+        </div>
+        <div class="field" id="creditsField">
+          <label for="newCredits">Credit Awal</label>
+          <input type="number" id="newCredits" min="0" value="10">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" id="cancelCreate">Batal</button>
+          <button type="submit" class="btn-primary" id="createSubmit">Tambah User</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/shared.js"></script>
+  <script>
+    (async () => {
+      const user = await requireSession();
+      if (!user) return;
+      if (user.role !== 'admin') {
+        window.location.href = '/dashboard';
+        return;
+      }
+
+      document.getElementById('shell').innerHTML = `
+        ${renderSidebar()}
+        <main class="main">
+          <div class="page-header">
+            <h1 class="page-title">Manajemen User</h1>
+            <button class="btn-primary" id="openCreate">+ Tambah User</button>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Semua User</div></div>
+            <div id="userTable"></div>
+          </div>
+        </main>
+      `;
+      initSidebar(user.role);
+
+      document.getElementById('openCreate').addEventListener('click', () => {
+        document.getElementById('createModalBackdrop').classList.add('show');
+      });
+      document.getElementById('cancelCreate').addEventListener('click', closeModal);
+      document.getElementById('createForm').addEventListener('submit', handleCreate);
+      document.getElementById('newRole').addEventListener('change', (e) => {
+        document.getElementById('creditsField').style.display = e.target.value === 'admin' ? 'none' : 'block';
+      });
+
+      await loadUsers();
+    })();
+
+    function closeModal() {
+      document.getElementById('createModalBackdrop').classList.remove('show');
+      document.getElementById('createError').classList.remove('show');
+      document.getElementById('createForm').reset();
+    }
+
+    async function loadUsers() {
+      try {
+        const { users } = await apiFetch('/api/users/list');
+        const container = document.getElementById('userTable');
+
+        if (users.length === 0) {
+          container.innerHTML = `<div class="empty-state"><strong>Belum ada user</strong></div>`;
+          return;
+        }
+
+        container.innerHTML = `
+          <table>
+            <thead><tr><th>Username</th><th>Peran</th><th>Credit</th><th>Status</th><th>Tindakan</th></tr></thead>
+            <tbody>
+              ${users.map(u => `
+                <tr>
+                  <td class="mono">${escapeHtml(u.username)}</td>
+                  <td><span class="badge ${u.role === 'admin' ? 'badge-violet' : 'badge-amber'}">${u.role === 'admin' ? 'Admin' : 'User'}</span></td>
+                  <td>${u.role === 'admin' ? '—' : `<input type="number" min="0" value="${u.credits}" data-credit-input="${escapeHtml(u.username)}" style="width:80px; padding:6px 10px;">`}</td>
+                  <td><span class="badge ${u.disabled ? 'badge-red' : 'badge-green'}">${u.disabled ? 'Nonaktif' : 'Aktif'}</span></td>
+                  <td class="row-actions">
+                    ${u.role !== 'admin' ? `<button class="btn-icon" title="Simpan credit" data-save-credit="${escapeHtml(u.username)}">💾</button>` : ''}
+                    <button class="btn-ghost" data-toggle="${escapeHtml(u.username)}" data-disabled="${u.disabled}">${u.disabled ? 'Aktifkan' : 'Nonaktifkan'}</button>
+                    <button class="btn-danger" data-delete="${escapeHtml(u.username)}">Hapus</button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+
+        document.querySelectorAll('[data-save-credit]').forEach(btn => {
+          btn.addEventListener('click', () => handleUpdateCredits(btn.dataset.saveCredit));
+        });
+        document.querySelectorAll('[data-toggle]').forEach(btn => {
+          btn.addEventListener('click', () => handleToggleDisabled(btn.dataset.toggle, btn.dataset.disabled === 'true'));
+        });
+        document.querySelectorAll('[data-delete]').forEach(btn => {
+          btn.addEventListener('click', () => handleDelete(btn.dataset.delete));
+        });
+      } catch (err) {
+        document.getElementById('userTable').innerHTML = `<div class="empty-state">${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    async function handleCreate(e) {
+      e.preventDefault();
+      const errorEl = document.getElementById('createError');
+      const submitBtn = document.getElementById('createSubmit');
+      errorEl.classList.remove('show');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Memproses...';
+
+      try {
+        await apiFetch('/api/users/create', {
+          method: 'POST',
+          body: JSON.stringify({
+            username: document.getElementById('newUsername').value.trim(),
+            password: document.getElementById('newPassword').value,
+            role: document.getElementById('newRole').value,
+            credits: document.getElementById('newCredits').value
+          })
+        });
+        closeModal();
+        await loadUsers();
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.add('show');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Tambah User';
+      }
+    }
+
+    async function handleUpdateCredits(username) {
+      const input = document.querySelector(`[data-credit-input="${CSS.escape(username)}"]`);
+      try {
+        await apiFetch('/api/users/update', {
+          method: 'POST',
+          body: JSON.stringify({ username, credits: input.value })
+        });
+        await loadUsers();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function handleToggleDisabled(username, currentlyDisabled) {
+      try {
+        await apiFetch('/api/users/update', {
+          method: 'POST',
+          body: JSON.stringify({ username, disabled: !currentlyDisabled })
+        });
+        await loadUsers();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function handleDelete(username) {
+      if (!confirm(`Hapus user ${username}?`)) return;
+      try {
+        await apiFetch('/api/users/delete', { method: 'POST', body: JSON.stringify({ username }) });
+        await loadUsers();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+  </script>
+</body>
+</html>
