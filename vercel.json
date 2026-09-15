@@ -1,0 +1,22 @@
+{
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/login", "destination": "/login/index.html" },
+    { "source": "/dashboard", "destination": "/dashboard/index.html" },
+    { "source": "/licenses", "destination": "/licenses/index.html" },
+    { "source": "/users", "destination": "/users/index.html" },
+    { "source": "/account", "destination": "/account/index.html" },
+    { "source": "/", "destination": "/login/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    }
+  ]
+}

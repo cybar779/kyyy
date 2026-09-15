@@ -1,0 +1,11 @@
+{
+  "name": "kyyymods",
+  "version": "1.0.0",
+  "private": true,
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "firebase-admin": "^12.1.0",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
