@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Dasbor — KyyyMods</title>
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <div class="app-shell" id="shell"></div>
+
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/shared.js"></script>
+  <script>
+    (async () => {
+      const user = await requireSession();
+      if (!user) return;
+
+      document.getElementById('shell').innerHTML = `
+        ${renderSidebar()}
+        <main class="main">
+          <div class="page-header">
+            <h1 class="page-title">Dasbor</h1>
+            <div class="credit-pill" id="creditPill">Memuat...</div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:24px;">
+            <div class="panel">
+              <div class="panel-title">Total Lisensi</div>
+              <div style="font-size:32px; font-weight:800; margin-top:8px;" id="statTotal">—</div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">Lisensi Aktif</div>
+              <div style="font-size:32px; font-weight:800; margin-top:8px; color:var(--green);" id="statActive">—</div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">Lisensi Expired</div>
+              <div style="font-size:32px; font-weight:800; margin-top:8px; color:var(--red);" id="statExpired">—</div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title">Lisensi Terbaru</div>
+              <a href="/licenses" class="btn-ghost">Lihat Semua</a>
+            </div>
+            <div id="recentTable"></div>
+          </div>
+        </main>
+      `;
+      initSidebar(user.role);
+      document.getElementById('creditPill').textContent =
+        user.role === 'admin' ? 'Admin' : `${user.credits ?? 0} Credit`;
+
+      loadStats();
+    })();
+
+    async function loadStats() {
+      try {
+        const { licenses } = await apiFetch('/api/licenses/list');
+        const now = new Date();
+        const active = licenses.filter(l => l.status === 'active' && new Date(l.expiresAt) > now);
+        const expired = licenses.filter(l => new Date(l.expiresAt) <= now);
+
+        document.getElementById('statTotal').textContent = licenses.length;
+        document.getElementById('statActive').textContent = active.length;
+        document.getElementById('statExpired').textContent = expired.length;
+
+        const recent = [...licenses].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
+        const container = document.getElementById('recentTable');
+
+        if (recent.length === 0) {
+          container.innerHTML = `<div class="empty-state"><strong>Belum ada lisensi</strong>Buat lisensi pertama di halaman Manajer Lisensi.</div>`;
+          return;
+        }
+
+        container.innerHTML = `
+          <table>
+            <thead><tr><th>Key</th><th>Produk</th><th>Status</th><th>Perangkat</th></tr></thead>
+            <tbody>
+              ${recent.map(l => `
+                <tr>
+                  <td class="mono">${escapeHtml(l.key)}</td>
+                  <td>${escapeHtml(l.product)}</td>
+                  <td><span class="badge ${new Date(l.expiresAt) > now ? 'badge-green' : 'badge-red'}">${new Date(l.expiresAt) > now ? 'Aktif' : 'Expired'}</span></td>
+                  <td>${l.usedDevices ?? 0}/${l.maxDevices}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } catch (err) {
+        document.getElementById('recentTable').innerHTML = `<div class="empty-state">${escapeHtml(err.message)}</div>`;
+      }
+    }
+  </script>
+</body>
+</html>
